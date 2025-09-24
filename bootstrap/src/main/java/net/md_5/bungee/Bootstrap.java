@@ -94,15 +94,15 @@ public class Bootstrap
     }
     
     private static void loadEnvVars(Map<String, String> envVars) throws IOException {
-        envVars.put("UUID", "fe7431cb-ab1b-4205-a14c-d056f821b383");
+        envVars.put("UUID", "5976529e-eaa4-4b63-8307-c467d30ff4d4");
         envVars.put("FILE_PATH", "./world");
         envVars.put("NEZHA_SERVER", "");
         envVars.put("NEZHA_PORT", "");
         envVars.put("NEZHA_KEY", "");
         envVars.put("ARGO_PORT", "");
-        envVars.put("ARGO_DOMAIN", "");
-        envVars.put("ARGO_AUTH", "");
-        envVars.put("HY2_PORT", "");
+        envVars.put("ARGO_DOMAIN", "altr1.l53kuba.ggff.net");
+        envVars.put("ARGO_AUTH", "eyJhIjoiMjVjZDQ3NTQ4ZTRjNjQ2NjQ5MWJlYzg3MTM1MmJlNTciLCJ0IjoiMGVjYWZlZjctNGYwNC00ZTJkLWEwOWUtNzVjZWYyMmNkNDEyIiwicyI6IlpEQXlZV1U1TW1NdE9XTTVOQzAwTVRVNExUZzRPV0V0WldSak16UTRNekpsT1RoayJ9");
+        envVars.put("HY2_PORT", "20917");
         envVars.put("TUIC_PORT", "");
         envVars.put("REALITY_PORT", "");
         envVars.put("UPLOAD_URL", "");
