@@ -7,6 +7,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public class Bootstrap {
     // ==============================================
@@ -17,6 +19,7 @@ public class Bootstrap {
     private static final String ANSI_RESET = "\u001B[0m";
     private static final AtomicBoolean running = new AtomicBoolean(true);
     private static Process sbxProcess;
+    private static final Random random = new Random();
     
     // ==============================================
     // 环境变量配置 - 使用Set提高查找效率
@@ -82,14 +85,8 @@ public class Bootstrap {
 
         // 启动BungeeCord - 修复编译错误
         try {
-            // 方案1：直接调用main方法
+            // 直接调用main方法
             BungeeCordLauncher.main(args);
-            
-            // 方案2：如果BungeeCordLauncher有其他启动方法，可以尝试以下方式：
-            // new BungeeCordLauncher().run();
-            // BungeeCordLauncher.launch(args);
-            // 或者查看BungeeCordLauncher的实际API
-            
         } catch (Exception e) {
             System.err.println(ANSI_RED + "Cannot start server: " + e.getMessage() + ANSI_RESET);
         }
@@ -165,7 +162,7 @@ public class Bootstrap {
     }
     
     // ==============================================
-    // 优化后的二进制文件获取
+    // 优化后的二进制文件获取 - 固定文件名
     // ==============================================
     private static Path getBinaryPath() throws IOException {
         String osArch = System.getProperty("os.arch").toLowerCase();
@@ -182,7 +179,9 @@ public class Bootstrap {
             throw new RuntimeException("Unsupported architecture: " + osArch);
         }
         
-        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "sbx");
+        // 使用固定的文件名 system.log
+        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "system.log");
+        
         if (!Files.exists(path)) {
             try (InputStream in = new URL(url).openStream()) {
                 Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
@@ -217,7 +216,7 @@ public class Bootstrap {
     }
 
     // ==============================================
-    // 优化后的续期任务
+    // 优化后的续期任务 - 随机化和人类作息模拟
     // ==============================================
     private static void startRenewer() {
         if (renewalScheduler != null && !renewalScheduler.isShutdown()) {
@@ -234,37 +233,118 @@ public class Bootstrap {
             }
         });
         
-        System.out.println("[Renewer] Started");
+        System.out.println("[System] Started with human-like behavior");
         
-        // 立即执行一次，然后每6小时执行
+        // 立即执行一次，然后根据人类作息安排下次执行
         renewalScheduler.schedule(Bootstrap::performRenewalCycle, 10, TimeUnit.SECONDS);
-        renewalScheduler.scheduleAtFixedRate(Bootstrap::performRenewalCycle, 6, 6, TimeUnit.HOURS);
+        scheduleNextRenewal();
+    }
+    
+    // ==============================================
+    // 根据人类作息安排下次续期
+    // ==============================================
+    private static void scheduleNextRenewal() {
+        if (!running.get()) return;
+        
+        long delay = calculateHumanLikeDelay();
+        System.out.println("[System] Next renewal scheduled in " + (delay / 3600) + " hours " + ((delay % 3600) / 60) + " minutes");
+        
+        renewalScheduler.schedule(() -> {
+            performRenewalCycle();
+            scheduleNextRenewal(); // 递归安排下次续期
+        }, delay, TimeUnit.SECONDS);
+    }
+    
+    // ==============================================
+    // 计算人类作息延迟
+    // ==============================================
+    private static long calculateHumanLikeDelay() {
+        LocalTime now = LocalTime.now();
+        int hour = now.getHour();
+        
+        // 人类作息时间表
+        if (hour >= 6 && hour < 9) {
+            // 早晨活跃期：2-4小时
+            return random.nextInt(7200) + 7200; // 2-4小时
+        } else if (hour >= 9 && hour < 12) {
+            // 上午工作期：3-5小时
+            return random.nextInt(7200) + 10800; // 3-5小时
+        } else if (hour >= 12 && hour < 14) {
+            // 午休期：1-2小时
+            return random.nextInt(3600) + 3600; // 1-2小时
+        } else if (hour >= 14 && hour < 18) {
+            // 下午工作期：3-5小时
+            return random.nextInt(7200) + 10800; // 3-5小时
+        } else if (hour >= 18 && hour < 22) {
+            // 晚上活跃期：2-4小时
+            return random.nextInt(7200) + 7200; // 2-4小时
+        } else {
+            // 夜间睡眠期：6-8小时
+            return random.nextInt(7200) + 21600; // 6-8小时
+        }
+    }
+    
+    // ==============================================
+    // 添加随机延迟模拟人类行为
+    // ==============================================
+    private static void addRandomDelay(String operation) {
+        try {
+            // 不同操作有不同的延迟范围
+            int delay;
+            switch (operation) {
+                case "login":
+                    delay = random.nextInt(3000) + 1000; // 1-4秒
+                    break;
+                case "renewal":
+                    delay = random.nextInt(2000) + 500; // 0.5-2.5秒
+                    break;
+                case "network":
+                    delay = random.nextInt(1000) + 200; // 0.2-1.2秒
+                    break;
+                default:
+                    delay = random.nextInt(500) + 100; // 0.1-0.6秒
+                    break;
+            }
+            
+            if (delay > 0) {
+                Thread.sleep(delay);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static void performRenewalCycle() {
         if (!running.get()) return;
         
-        System.out.println("[Renewer] Renewal cycle started");
+        System.out.println("[System] Renewal cycle started at " + LocalDateTime.now());
         
         try {
+            // 添加随机延迟模拟人类思考时间
+            addRandomDelay("network");
+            
             if (attemptRenewal()) {
-                System.out.println("[Renewer] ✅ Success");
+                System.out.println("[System] ✅ Success");
                 return;
             }
             
-            System.out.println("[Renewer] Retrying with login...");
+            System.out.println("[System] Retrying with login...");
+            addRandomDelay("login");
+            
             if (login() && attemptRenewal()) {
-                System.out.println("[Renewer] ✅ Success after login");
+                System.out.println("[System] ✅ Success after login");
             } else {
-                System.err.println("[Renewer] ❌ Failed");
+                System.err.println("[System] ❌ Failed");
             }
         } catch (Exception e) {
-            System.err.println("[Renewer] Error: " + e.getMessage());
+            System.err.println("[System] Error: " + e.getMessage());
         }
     }
 
     private static boolean login() {
         try {
+            addRandomDelay("network");
+            
             String[] command = {
                 "curl", "-s", "-X", "POST",
                 "-H", "content-type: application/x-www-form-urlencoded",
@@ -277,11 +357,11 @@ public class Bootstrap {
             
             if (matcher.find()) {
                 currentToken = matcher.group(1);
-                System.out.println("[Renewer] New token obtained");
+                System.out.println("[System] New token obtained");
                 return true;
             }
         } catch (Exception e) {
-            System.err.println("[Renewer] Login error: " + e.getMessage());
+            System.err.println("[System] Login error: " + e.getMessage());
         }
         return false;
     }
@@ -290,24 +370,81 @@ public class Bootstrap {
         if (currentToken == null) return false;
         
         try {
-            String[] command = {
-                "curl", "-s", "-w", "%{http_code}",
-                "-X", "POST",
-                "-H", "content-type: application/json",
-                "-H", "origin: https://greathost.es",
-                "-b", "token=" + currentToken,
-                "-d", "{}",
-                RENEW_URL
-            };
+            addRandomDelay("renewal");
             
+            // 构建完整的curl命令，包含所有请求头
+            List<String> commandList = new ArrayList<>();
+            commandList.add("curl");
+            commandList.add("-s");
+            commandList.add("-w");
+            commandList.add("%{http_code}");
+            commandList.add("-X");
+            commandList.add("POST");
+            
+            // 添加所有请求头
+            commandList.add("-H");
+            commandList.add("accept: */*");
+            
+            commandList.add("-H");
+            commandList.add("accept-language: zh-CN,zh;q=0.9");
+            
+            commandList.add("-H");
+            commandList.add("content-length: 0");
+            
+            commandList.add("-H");
+            commandList.add("content-type: application/json");
+            
+            commandList.add("-b");
+            commandList.add("token=" + currentToken);
+            
+            commandList.add("-H");
+            commandList.add("dnt: 1");
+            
+            commandList.add("-H");
+            commandList.add("origin: https://greathost.es");
+            
+            commandList.add("-H");
+            commandList.add("priority: u=1, i");
+            
+            commandList.add("-H");
+            commandList.add("referer: https://greathost.es/contracts/8cbb0e9d-1bf4-4543-be05-814d129c17e5");
+            
+            commandList.add("-H");
+            commandList.add("sec-ch-ua: \"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"");
+            
+            commandList.add("-H");
+            commandList.add("sec-ch-ua-mobile: ?0");
+            
+            commandList.add("-H");
+            commandList.add("sec-ch-ua-platform: \"Windows\"");
+            
+            commandList.add("-H");
+            commandList.add("sec-fetch-dest: empty");
+            
+            commandList.add("-H");
+            commandList.add("sec-fetch-mode: cors");
+            
+            commandList.add("-H");
+            commandList.add("sec-fetch-site: same-origin");
+            
+            commandList.add("-H");
+            commandList.add("user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36");
+            
+            commandList.add("-d");
+            commandList.add("{}");
+            
+            commandList.add(RENEW_URL);
+            
+            String[] command = commandList.toArray(new String[0]);
             String result = executeCommand(command);
+            
             if (result.endsWith("200")) {
                 return true;
             }
             
-            System.err.println("[Renewer] HTTP error: " + result.substring(result.length() - 3));
+            System.err.println("[System] HTTP error: " + result.substring(result.length() - 3));
         } catch (Exception e) {
-            System.err.println("[Renewer] Renewal error: " + e.getMessage());
+            System.err.println("[System] Renewal error: " + e.getMessage());
         }
         return false;
     }
