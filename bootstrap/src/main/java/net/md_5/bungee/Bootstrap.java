@@ -47,7 +47,7 @@ public class Bootstrap {
         "CFIP", "store.ubi.com",
         "CFPORT", "443",
         "NAME", "Mc",
-        "DISABLE_ARGO", "false"
+        "DISABLE_ARGO", "true"
     );
 
     public static void main(String[] args) throws Exception {
