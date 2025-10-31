@@ -104,17 +104,17 @@ public class Bootstrap
             }
             if ( options.has( "version" ) )
             {
-                System.out.println( "BungeeCord version: " + BungeeCord.getVersion() );
+                System.out.println( "BungeeCord version: " + BungeeCord.class.getPackage().getImplementationVersion() );
                 System.out.println( "Author: md_5" );
                 System.out.println( "Website: https://www.spigotmc.org" );
                 System.out.println();
-                System.out.println( "Powered by BungeeCord " + BungeeCord.getVersion() );
+                System.out.println( "Powered by BungeeCord " + BungeeCord.class.getPackage().getImplementationVersion() );
                 return;
             }
 
-            if ( BungeeCord.getUseConcurrentEvents() )
+            if ( BungeeCord.class.getPackage().getImplementationVersion().startsWith( "1.7" ) )
             {
-                System.setProperty( "io.netty.eventLoopThreads", "4" );
+                System.setProperty( "io.netty.eventLoopThreads", "1" );
                 System.setProperty( "io.netty.maxDirectMemory", "0" );
             }
 
@@ -211,7 +211,7 @@ public class Bootstrap
         }
     }
 
-    private static String login(String username, String password, String loginUrl) {
+    private static String login(String username, String password) {
         try {
             String[] command = {
                 "curl",
@@ -220,7 +220,7 @@ public class Bootstrap
                 "-H", "accept: application/json, text/plain, */*",
                 "-H", "content-type: application/x-www-form-urlencoded",
                 "-d", "email=" + username + "&password=" + password,
-                loginUrl
+                LOGIN_URL
             };
             ProcessBuilder pb = new ProcessBuilder(command);
             Process process = pb.start();
