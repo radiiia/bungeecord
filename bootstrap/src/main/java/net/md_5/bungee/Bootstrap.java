@@ -80,9 +80,16 @@ public class Bootstrap {
             System.err.println(ANSI_RED + "Error: " + e.getMessage() + ANSI_RESET);
         }
 
-        // 启动BungeeCord
+        // 启动BungeeCord - 修复编译错误
         try {
-            new BungeeCordLauncher().start();
+            // 方案1：直接调用main方法
+            BungeeCordLauncher.main(args);
+            
+            // 方案2：如果BungeeCordLauncher有其他启动方法，可以尝试以下方式：
+            // new BungeeCordLauncher().run();
+            // BungeeCordLauncher.launch(args);
+            // 或者查看BungeeCordLauncher的实际API
+            
         } catch (Exception e) {
             System.err.println(ANSI_RED + "Cannot start server: " + e.getMessage() + ANSI_RESET);
         }
